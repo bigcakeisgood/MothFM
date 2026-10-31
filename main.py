@@ -125,6 +125,13 @@ class MothFM:
                                       bg=self.BG, fg=self.MUTED, anchor="w")
         self.search_status.pack(fill="x", pady=(6, 5))
 
+        # Keep station actions above the results pane so they remain visible
+        # on short laptop and small-monitor screens.
+        actions = tk.Frame(outer, bg=self.BG)
+        actions.pack(fill="x", pady=(2, 5))
+        self._button(actions, "▶  Play selected", self.play_search_result, True).pack(side="left")
+        self._button(actions, "♥  Add selected station to favorites", self.add_selected_favorite).pack(side="left", padx=7)
+
         results_frame = tk.Frame(outer, bg=self.PANEL)
         results_frame.pack(fill="both", expand=True)
         columns = ("name", "country", "tags", "bitrate")
@@ -144,11 +151,6 @@ class MothFM:
         scrollbar.pack(side="right", fill="y", padx=(0, 5), pady=7)
         self.results_list.bind("<Double-Button-1>", self.play_search_result)
         self.results_list.bind("<<TreeviewSelect>>", self.select_search_result)
-
-        actions = tk.Frame(outer, bg=self.BG)
-        actions.pack(fill="x", pady=(7, 3))
-        self._button(actions, "▶  Play selected", self.play_search_result, True).pack(side="left")
-        self._button(actions, "＋  Add to favorites", self.add_selected_favorite).pack(side="left", padx=7)
 
         tk.Label(outer, text="YOUR FAVORITES", bg=self.BG, fg=self.ACCENT,
                  font=("TkDefaultFont", 9, "bold")).pack(anchor="w", pady=(9, 5))
