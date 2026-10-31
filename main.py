@@ -132,7 +132,15 @@ class MothFM:
         self._button(actions, "▶  Play selected", self.play_search_result, True).pack(side="left")
         self._button(actions, "♥  Add selected station to favorites", self.add_selected_favorite).pack(side="left", padx=7)
 
-        results_frame = tk.Frame(outer, bg=self.PANEL)
+        # Separate station discovery and saved stations into visible tabs.
+        tabs = ttk.Notebook(outer)
+        tabs.pack(fill="both", expand=True, pady=(2, 0))
+        discover_tab = tk.Frame(tabs, bg=self.PANEL)
+        favorites_tab = tk.Frame(tabs, bg=self.PANEL)
+        tabs.add(discover_tab, text="Stations")
+        tabs.add(favorites_tab, text="♥ Favorites")
+
+        results_frame = tk.Frame(discover_tab, bg=self.PANEL)
         results_frame.pack(fill="both", expand=True)
         columns = ("name", "country", "tags", "bitrate")
         self.results_list = ttk.Treeview(results_frame, columns=columns,
@@ -152,18 +160,22 @@ class MothFM:
         self.results_list.bind("<Double-Button-1>", self.play_search_result)
         self.results_list.bind("<<TreeviewSelect>>", self.select_search_result)
 
-        tk.Label(outer, text="YOUR FAVORITES", bg=self.BG, fg=self.ACCENT,
-                 font=("TkDefaultFont", 9, "bold")).pack(anchor="w", pady=(9, 5))
-        fav_frame = tk.Frame(outer, bg=self.PANEL)
-        fav_frame.pack(fill="x")
+        tk.Label(favorites_tab, text="YOUR SAVED STATIONS", bg=self.PANEL,
+                 fg=self.ACCENT, font=("TkDefaultFont", 9, "bold")).pack(
+                     anchor="w", padx=12, pady=(12, 6))
+        fav_frame = tk.Frame(favorites_tab, bg=self.PANEL)
+        fav_frame.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.station_list = tk.Listbox(
             fav_frame, bg=self.PANEL, fg=self.FG, selectbackground="#51466b",
             selectforeground=self.FG, relief="flat", borderwidth=0,
-            highlightthickness=0, activestyle="none", font=("TkDefaultFont", 9), height=3,
+            highlightthickness=0, activestyle="none", font=("TkDefaultFont", 10),
         )
-        self.station_list.pack(side="left", fill="both", expand=True, padx=7, pady=5)
+        self.station_list.pack(side="left", fill="both", expand=True, padx=7, pady=7)
         self.station_list.bind("<Double-Button-1>", self.play_favorite)
-        self._button(fav_frame, "Remove", self.remove_favorite).pack(side="right", padx=7)
+        fav_actions = tk.Frame(favorites_tab, bg=self.PANEL)
+        fav_actions.pack(fill="x", padx=15, pady=(0, 12))
+        self._button(fav_actions, "▶ Play favorite", self.play_favorite, True).pack(side="left")
+        self._button(fav_actions, "Remove selected", self.remove_favorite).pack(side="left", padx=8)
         self._refresh_favorites()
 
         tk.Label(outer, text="Powered by the community-maintained Radio Browser directory.",
