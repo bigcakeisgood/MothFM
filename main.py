@@ -227,8 +227,15 @@ class MothFM:
         try:
             url = RADIO_API + "?" + urlencode(params)
             request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with self._url_opener().open(request, timeout=15) as response:
-                data = json.loads(response.read().decode("utf-8"))
+            opener = self._url_opener()
+            try:
+                with opener.open(request, timeout=15) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+            finally:
+                original_socket = getattr(opener, "_mothfm_original_socket", None)
+                if original_socket is not None:
+                    import http.client
+                    http.client.socket.socket = original_socket
             self.search_queue.put(("results", data))
         except (URLError, TimeoutError, OSError, ValueError) as exc:
             self.search_queue.put(("error", str(exc)))
@@ -293,8 +300,13 @@ class MothFM:
         try:
             media = self.vlc.Instance("--no-video").media_new(url)
             proxy_url = self._active_proxy_url()
-            if proxy_url:
+            if proxy_url and urlsplit(proxy_url).scheme in ("http", "https"):
                 media.add_option(f":http-proxy={urlsplit(proxy_url).netloc}")
+            elif proxy_url:
+                raise RuntimeError(
+                    "SOCKS5 proxies currently support station searches only. "
+                    "VLC stream playback requires an HTTP/HTTPS proxy."
+                )
             self.player.set_media(media)
             self.player.play()
             self.player.audio_set_volume(self.volume.get())
@@ -434,19 +446,20 @@ class MothFM:
                  font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
         enabled = tk.BooleanVar(value=bool(self.settings.get("proxy_enabled")))
         tk.Checkbutton(
-            body, text="Use an HTTP proxy", variable=enabled,
+            body, text="Use a proxy", variable=enabled,
             bg=self.BG, fg=self.FG, activebackground=self.BG,
             activeforeground=self.FG, selectcolor=self.PANEL,
         ).pack(anchor="w", pady=(10, 8))
-        tk.Label(body, text="Proxy address (for example, http://127.0.0.1:8080)",
+        tk.Label(body, text="Proxy address (HTTP/HTTPS or SOCKS5)",
                  bg=self.BG, fg=self.MUTED).pack(anchor="w")
         proxy_entry = tk.Entry(body, width=48, bg=self.PANEL, fg=self.FG,
                                insertbackground=self.FG, relief="flat")
         proxy_entry.insert(0, self.settings.get("proxy_url", ""))
         proxy_entry.pack(fill="x", pady=(5, 12), ipady=6)
         tk.Label(
-            body, text="Used for Radio Browser searches and station streams. "
-                       "Proxy credentials are not stored; use an unauthenticated proxy.",
+            body, text="HTTP/HTTPS proxies support searches and station streams. "
+                       "SOCKS5 proxies support station searches only; VLC playback "
+                       "requires an HTTP/HTTPS proxy. Credentials are not supported.",
             bg=self.BG, fg=self.MUTED, wraplength=390, justify="left",
         ).pack(anchor="w", pady=(0, 14))
 
@@ -458,12 +471,13 @@ class MothFM:
                     valid_port = parsed.port is None or 1 <= parsed.port <= 65535
                 except ValueError:
                     valid_port = False
-                if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                if (parsed.scheme not in ("http", "https", "socks5", "socks5h") or not parsed.hostname
                         or parsed.username or parsed.password or not valid_port
                         or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
                     messagebox.showerror(
                         "Invalid proxy",
-                        "Enter an HTTP or HTTPS proxy address such as http://127.0.0.1:8080. "
+                        "Enter an HTTP/HTTPS or SOCKS5 proxy address, e.g. http://127.0.0.1:8080 "
+                        "or socks5h://127.0.0.1:1080. "
                         "Do not include a username or password.",
                         parent=dialog,
                     )
@@ -472,7 +486,7 @@ class MothFM:
             self._save_settings()
             dialog.destroy()
             self.search_status.config(text=(
-                "Proxy enabled. New searches and playback will use it."
+                "Proxy enabled. New searches will use it."
                 if enabled.get() else "Proxy disabled. Using the normal connection."
             ))
 
