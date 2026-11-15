@@ -12,11 +12,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlencode, urlsplit
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 APP_DIR = Path.home() / ".mothfm"
 FAVORITES_FILE = APP_DIR / "favorites.json"
+SETTINGS_FILE = APP_DIR / "settings.json"
 RADIO_API = "https://de1.api.radio-browser.info/json/stations/search"
 USER_AGENT = "MothFM/0.2 (desktop internet radio player)"
 
@@ -38,6 +39,7 @@ class MothFM:
         self.vlc = None
         self.current_station: dict | None = None
         self.favorites = self._load_favorites()
+        self.settings = self._load_settings()
         self.search_queue: queue.Queue = queue.Queue()
         self.searching = False
         self.results: list[dict] = []
@@ -77,8 +79,9 @@ class MothFM:
         header.pack(fill="x")
         tk.Label(header, text="☾  MothFM", bg=self.BG, fg=self.FG,
                  font=("TkDefaultFont", 24, "bold")).pack(side="left")
+        self._button(header, "⚙  Settings", self.open_settings).pack(side="right", pady=(7, 0))
         tk.Label(header, text="INTERNET RADIO", bg=self.BG, fg=self.MUTED,
-                 font=("TkDefaultFont", 9, "bold")).pack(side="right", pady=(12, 0))
+                 font=("TkDefaultFont", 9, "bold")).pack(side="right", padx=(0, 14), pady=(12, 0))
         tk.Label(outer, text="A little night music, from everywhere.",
                  bg=self.BG, fg=self.MUTED).pack(anchor="w", pady=(3, 14))
 
@@ -224,7 +227,7 @@ class MothFM:
         try:
             url = RADIO_API + "?" + urlencode(params)
             request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urlopen(request, timeout=15) as response:
+            with self._url_opener().open(request, timeout=15) as response:
                 data = json.loads(response.read().decode("utf-8"))
             self.search_queue.put(("results", data))
         except (URLError, TimeoutError, OSError, ValueError) as exc:
@@ -289,6 +292,9 @@ class MothFM:
             return
         try:
             media = self.vlc.Instance("--no-video").media_new(url)
+            proxy_url = self._active_proxy_url()
+            if proxy_url:
+                media.add_option(f":http-proxy={urlsplit(proxy_url).netloc}")
             self.player.set_media(media)
             self.player.play()
             self.player.audio_set_volume(self.volume.get())
@@ -360,6 +366,106 @@ class MothFM:
             del self.favorites[selection[0]]
             self._save_favorites()
             self._refresh_favorites()
+
+
+    def _load_settings(self) -> dict:
+        try:
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {
+                    "proxy_enabled": bool(data.get("proxy_enabled", False)),
+                    "proxy_url": str(data.get("proxy_url", "")).strip(),
+                }
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+        return {"proxy_enabled": False, "proxy_url": ""}
+
+    def _save_settings(self) -> None:
+        APP_DIR.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps(self.settings, indent=2), encoding="utf-8")
+
+    def _active_proxy_url(self) -> str | None:
+        if not self.settings.get("proxy_enabled"):
+            return None
+        proxy_url = self.settings.get("proxy_url", "").strip()
+        parsed = urlsplit(proxy_url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return None
+        if parsed.username or parsed.password:
+            return None
+        try:
+            if parsed.port is not None and not (1 <= parsed.port <= 65535):
+                return None
+        except ValueError:
+            return None
+        return proxy_url
+
+    def _url_opener(self):
+        proxy_url = self._active_proxy_url()
+        if proxy_url:
+            return build_opener(ProxyHandler({"http": proxy_url, "https": proxy_url}))
+        return build_opener(ProxyHandler({}))
+
+    def open_settings(self) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("MothFM Settings")
+        dialog.configure(bg=self.BG)
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        body = tk.Frame(dialog, bg=self.BG, padx=20, pady=18)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="CONNECTION", bg=self.BG, fg=self.ACCENT,
+                 font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+        enabled = tk.BooleanVar(value=bool(self.settings.get("proxy_enabled")))
+        tk.Checkbutton(
+            body, text="Use an HTTP proxy", variable=enabled,
+            bg=self.BG, fg=self.FG, activebackground=self.BG,
+            activeforeground=self.FG, selectcolor=self.PANEL,
+        ).pack(anchor="w", pady=(10, 8))
+        tk.Label(body, text="Proxy address (for example, http://127.0.0.1:8080)",
+                 bg=self.BG, fg=self.MUTED).pack(anchor="w")
+        proxy_entry = tk.Entry(body, width=48, bg=self.PANEL, fg=self.FG,
+                               insertbackground=self.FG, relief="flat")
+        proxy_entry.insert(0, self.settings.get("proxy_url", ""))
+        proxy_entry.pack(fill="x", pady=(5, 12), ipady=6)
+        tk.Label(
+            body, text="Used for Radio Browser searches and station streams. "
+                       "Proxy credentials are not stored; use an unauthenticated proxy.",
+            bg=self.BG, fg=self.MUTED, wraplength=390, justify="left",
+        ).pack(anchor="w", pady=(0, 14))
+
+        def save() -> None:
+            candidate = proxy_entry.get().strip()
+            if enabled.get():
+                parsed = urlsplit(candidate)
+                try:
+                    valid_port = parsed.port is None or 1 <= parsed.port <= 65535
+                except ValueError:
+                    valid_port = False
+                if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                        or parsed.username or parsed.password or not valid_port
+                        or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+                    messagebox.showerror(
+                        "Invalid proxy",
+                        "Enter an HTTP or HTTPS proxy address such as http://127.0.0.1:8080. "
+                        "Do not include a username or password.",
+                        parent=dialog,
+                    )
+                    return
+            self.settings = {"proxy_enabled": enabled.get(), "proxy_url": candidate}
+            self._save_settings()
+            dialog.destroy()
+            self.search_status.config(text=(
+                "Proxy enabled. New searches and playback will use it."
+                if enabled.get() else "Proxy disabled. Using the normal connection."
+            ))
+
+        buttons = tk.Frame(body, bg=self.BG)
+        buttons.pack(fill="x")
+        self._button(buttons, "Cancel", dialog.destroy).pack(side="right")
+        self._button(buttons, "Save settings", save, True).pack(side="right", padx=(0, 8))
 
     def _load_favorites(self) -> list[dict]:
         try:
