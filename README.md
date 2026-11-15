@@ -10,7 +10,7 @@ A small desktop internet radio player built with Python and Tkinter, with live s
 - Save stations to a local favorites list and play them later
 - Stop playback and adjust volume
 - Favorites stored locally in `~/.mothfm/favorites.json`
-- Optional HTTP/HTTPS proxy settings for station searches and streams, stored in `~/.mothfm/settings.json`
+- Optional HTTP/HTTPS proxy settings for station searches and streams, plus SOCKS5 proxy settings for station searches, stored in `~/.mothfm/settings.json`
 - Station searches run in the background so the interface stays responsive
 
 ## Requirements
@@ -27,7 +27,7 @@ A small desktop internet radio player built with Python and Tkinter, with live s
 3. Start the app: `python main.py`
 4. Search by station name, country, and/or genre. Double-click a result to listen.
 
-Open **Settings** in the app to enable an HTTP/HTTPS proxy (for example, `http://127.0.0.1:8080`). The proxy is used for both Radio Browser searches and station playback. Proxy URLs with embedded credentials are not supported.
+Open **Settings** in the app to enable an HTTP/HTTPS proxy (for example, `http://127.0.0.1:8080`) or a SOCKS5 proxy (for example, `socks5h://127.0.0.1:1080`). HTTP/HTTPS proxies are used for both Radio Browser searches and station playback. SOCKS5 proxies are used for Radio Browser searches; VLC stream playback currently requires an HTTP/HTTPS proxy. Proxy authentication credentials are not supported.
 
 MothFM uses the Radio Browser API for station discovery. Directory availability depends on that community service and an internet connection. Some station streams may be offline, geo-restricted, or unsupported by the installed VLC build.
 
