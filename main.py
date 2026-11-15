@@ -389,7 +389,7 @@ class MothFM:
             return None
         proxy_url = self.settings.get("proxy_url", "").strip()
         parsed = urlsplit(proxy_url)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        if parsed.scheme not in ("http", "https", "socks5", "socks5h") or not parsed.hostname:
             return None
         if parsed.username or parsed.password:
             return None
@@ -402,6 +402,20 @@ class MothFM:
 
     def _url_opener(self):
         proxy_url = self._active_proxy_url()
+        if proxy_url and urlsplit(proxy_url).scheme in ("socks5", "socks5h"):
+            try:
+                import socks  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("SOCKS5 support requires PySocks. Install requirements.txt.") from exc
+            parsed = urlsplit(proxy_url)
+            socks.set_default_proxy(socks.SOCKS5, parsed.hostname, parsed.port or 1080,
+                                    rdns=parsed.scheme == "socks5h")
+            import http.client
+            original_socket = http.client.socket.socket
+            http.client.socket.socket = socks.socksocket
+            opener = build_opener(ProxyHandler({}))
+            opener._mothfm_original_socket = original_socket
+            return opener
         if proxy_url:
             return build_opener(ProxyHandler({"http": proxy_url, "https": proxy_url}))
         return build_opener(ProxyHandler({}))
